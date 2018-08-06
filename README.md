@@ -1,11 +1,13 @@
-# tsil
+# tsil - typescript to il
 
 /ti:.sl̩/
 
-Install node
+## Building
 
-Install yarn
+- Install node
+- Install yarn
+- Run `yarn install`
 
-Run `yarn install`
+## Running tsil
 
-Run `node_modules/.bin/ts-node compile.ts`
+- Run `node_modules/.bin/ts-node compile.ts`
