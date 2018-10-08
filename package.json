@@ -11,6 +11,6 @@
     "ts-node": "^7.0.0"
   },
   "scripts": {
-    "start": "node compile.js"
+    "start": "ts-node compile.ts"
   }
 }
