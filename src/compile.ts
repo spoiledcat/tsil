@@ -2,6 +2,9 @@ import * as ts from 'typescript';
 import { readFile, writeFile } from 'fs';
 import { promisify } from 'util';
 import { exec } from 'child_process';
+import commandLineArgs from 'command-line-args';
+import commandLineUsage from 'command-line-usage';
+import path from 'path';
 
 enum ExpressionType {
     Call,
@@ -98,21 +101,63 @@ class Compiler {
     }
 }
 
+const optionDefinitions = [
+    {
+        name: 'help',
+        alias: 'h',
+        description: 'Display this usage guide.',
+    },
+    {
+        name: 'out',
+        typeLabel: '{underline file}',
+        description: 'Output assembly name',
+    },
+];
+
+const sections = [
+    {
+        header: 'TSIL',
+        content: 'Compile typescript into .net',
+    },
+    {
+        header: 'Options',
+        optionList: optionDefinitions,
+    },
+];
+
+const options = commandLineArgs(optionDefinitions, { partial: true });
+const sourceFiles = options._unknown;
+if (!sourceFiles) {
+    console.error(commandLineUsage(sections));
+    process.exit(-1);
+}
+
+const targetAssembly: string = options.out || 'hello.exe';
+const assemblyName = path.parse(targetAssembly).name;
+const outputILFile = `${assemblyName}.il`;
+
 (async () => {
     const printer: ts.Printer = ts.createPrinter();
     let read = promisify(readFile);
-    let txt = (await read('hello.tsi')).toString();
-    const source: ts.SourceFile = ts.createSourceFile('source.ts', txt, ts.ScriptTarget.ES2018);
+    //let txt = (await read('hello.tsi')).toString();
+    //const source: ts.SourceFile = ts.createSourceFile('source.ts', txt, ts.ScriptTarget.ES2018);
     //console.log(printer.printFile(source));
-    const result = ts.transform(source, [Compiler.factory]);
+
+    const sources: ts.SourceFile[] = [];
+    for (const file of sourceFiles!) {
+        let txt = (await read(file)).toString();
+        sources.push(ts.createSourceFile(path.parse(file).base, txt, ts.ScriptTarget.ES2018));
+    }
+
+    const result = ts.transform(sources, [Compiler.factory]);
 
     result.transformed[0];
 
     let output: string = '';
 
     output += `
-.assembly 'test' {}
-.module test
+.assembly '${assemblyName}' {}
+.module ${assemblyName}
 `;
     for (let m of Compiler.compiler.methods) {
         output += `
@@ -162,7 +207,7 @@ class Compiler {
   `;
 
     let write = promisify(writeFile);
-    await write('hello.il', output);
-    exec('ilasm hello.il');
-    console.log('hello.exe ready');
+    await write(outputILFile, output);
+    exec(`ilasm ${outputILFile} /output:${targetAssembly}`);
+    console.log(`${targetAssembly} ready`);
 })();
