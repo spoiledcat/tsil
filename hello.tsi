@@ -1,1 +1,6 @@
+function test(): string {
+    return "haha"
+}
+
 System.Console.WriteLine("Im in ur dotnetz, typescripting ur stuffz")
+test()

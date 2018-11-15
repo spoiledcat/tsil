@@ -43,7 +43,7 @@ class Compiler {
     }
 
     static visitor<T extends ts.Node>(node: ts.Node): T {
-        //console.log(`Visiting ${ts.SyntaxKind[node.kind]}`);
+        console.log(`Visiting ${ts.SyntaxKind[node.kind]}`);
         let method = Compiler.currentMethod()!;
         switch (node.kind) {
             case ts.SyntaxKind.SourceFile:
@@ -80,11 +80,53 @@ class Compiler {
                 break;
             case ts.SyntaxKind.Identifier: {
                 let str: string = (<ts.Identifier>node).escapedText.toString();
-                let expr = method.body.pop()!;
+                let expr = method.body.pop();
+                if (!expr) {
+                    break;
+                }
                 expr.name.push(str);
                 method.body.push(expr);
                 break;
             }
+            case ts.SyntaxKind.FunctionDeclaration:
+                {
+                    const func: ts.FunctionDeclaration = <ts.FunctionDeclaration>node;
+                    method = {
+                        name: func.name,
+                        isStatic: true,
+                        isPrivate: true,
+                        isEntry: true,
+                        returns: 'void',
+                        arguments: [],
+                        body: [],
+                    };
+                    Compiler.compiler.methods.push(method);
+                }
+                break;
+            case ts.SyntaxKind.StringKeyword:
+                {
+                }
+                break;
+            case ts.SyntaxKind.Block:
+                {
+                }
+                break;
+            case ts.SyntaxKind.ReturnStatement:
+                {
+                }
+                break;
+            case ts.SyntaxKind.StringLiteral:
+                {
+                }
+                break;
+            case ts.SyntaxKind.ExpressionStatement:
+                {
+                }
+                break;
+            case ts.SyntaxKind.PropertyAccessExpression:
+                {
+                }
+                break;
             default:
                 break;
         }
@@ -160,6 +202,8 @@ const outputILFile = `${assemblyName}.il`;
 .module ${assemblyName}
 `;
     for (let m of Compiler.compiler.methods) {
+        console.log(m);
+
         output += `
     .method ${m.isStatic ? 'static' : ''} hidebysig default ${m.returns} ${m.name}(${m.arguments.join(
             ', '
