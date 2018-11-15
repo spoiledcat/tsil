@@ -1,16 +1,27 @@
 {
-  "name": "test",
-  "version": "1.0.0",
-  "main": "compile.js",
-  "license": "MIT",
-  "devDependencies": {
-    "typescript": "^3.0.1"
-  },
-  "dependencies": {
-    "@types/node": "^10.5.6",
-    "ts-node": "^7.0.0"
-  },
-  "scripts": {
-    "start": "node compile.js"
-  }
+    "name": "test",
+    "version": "1.0.0",
+    "main": "out/compile.js",
+    "license": "MIT",
+    "devDependencies": {
+        "@types/mocha": "^5.2.5",
+        "@types/sinon": "^5.0.5",
+        "chai": "^4.2.0",
+        "chai-as-promised": "^7.1.1",
+        "mocha": "^5.2.0",
+        "npm-run-all": "^4.1.3",
+        "sinon": "^7.1.1",
+        "ts-mocha": "^2.0.0",
+        "typescript": "^3.0.1"
+    },
+    "dependencies": {
+        "@types/node": "^10.5.6",
+        "ts-node": "^7.0.1",
+        "tslint": "^5.11.0",
+        "tslint-config-prettier": "^1.16.0"
+    },
+    "scripts": {
+        "start": "ts-node -P src/tsconfig.json src/compile.ts",
+        "test": "ts-mocha -p test/tsconfig.json test/*.spec.ts"
+    }
 }
