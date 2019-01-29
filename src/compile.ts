@@ -1,4 +1,4 @@
-import * as ts from 'typescript';
+import ts from 'typescript';
 import { readFile, writeFile } from 'fs';
 import { promisify } from 'util';
 import { exec } from 'child_process';
@@ -92,7 +92,7 @@ class Compiler {
                 {
                     const func: ts.FunctionDeclaration = <ts.FunctionDeclaration>node;
                     method = {
-                        name: func.name,
+                        name: func.name!.toString(),
                         isStatic: true,
                         isPrivate: true,
                         isEntry: true,

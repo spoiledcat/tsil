@@ -1,6 +1,9 @@
 function test(): string {
-    return "haha"
+    return "haha";
 }
+
+function anotherone() => 'oof';
+function another() => { if (true) return ''; else return '1'; };
 
 System.Console.WriteLine("Im in ur dotnetz, typescripting ur stuffz")
 test()
