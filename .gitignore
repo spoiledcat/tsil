@@ -1,4 +1,7 @@
 node_modules
 *.exe
-*.js
-*.js.*
+src/*.js
+src/*.js.*
+out/
+log
+*.il

@@ -1,22 +1,24 @@
 {
     "name": "test",
     "version": "1.0.0",
-    "main": "compile.js",
+    "main": "src/compile.ts",
     "license": "MIT",
+    "scripts": {
+        "start": "ts-node src/compile.ts",
+        "try": "ts-node src/compile.ts tests/app/hello.ts"
+    },
     "devDependencies": {
-        "typescript": "^3.0.1"
+        "tslint-config-prettier": "^1.18.0",
+        "typescript": "^3.4.4"
     },
     "dependencies": {
         "@types/command-line-args": "^5.0.0",
         "@types/command-line-usage": "^5.0.1",
         "@types/node": "^10.5.6",
-        "@types/redux": "^3.6.0",
+        "async-file": "^2.0.2",
         "command-line-args": "^5.0.2",
         "command-line-usage": "^5.0.5",
         "redux": "^4.0.1",
         "ts-node": "^7.0.0"
-    },
-    "scripts": {
-        "start": "ts-node src/compile.ts"
     }
 }

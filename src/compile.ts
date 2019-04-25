@@ -1,10 +1,10 @@
 import ts from 'typescript';
-import { readFile, writeFile } from 'fs';
-import { promisify } from 'util';
+import { mkdir, readFile, writeFile, exists } from 'async-file';
 import { exec } from 'child_process';
 import commandLineArgs from 'command-line-args';
 import commandLineUsage from 'command-line-usage';
 import path from 'path';
+import { isUndefined } from 'util';
 
 enum ExpressionType {
     Call,
@@ -143,115 +143,176 @@ class Compiler {
     }
 }
 
-const optionDefinitions = [
-    {
-        name: 'help',
-        alias: 'h',
-        description: 'Display this usage guide.',
-    },
-    {
-        name: 'out',
-        typeLabel: '{underline file}',
-        description: 'Output assembly name',
-    },
-];
+class Runner {
 
-const sections = [
-    {
-        header: 'TSIL',
-        content: 'Compile typescript into .net',
-    },
-    {
-        header: 'Options',
-        optionList: optionDefinitions,
-    },
-];
+    private optionDefinitions = [
+        {
+            name: 'help',
+            alias: 'h',
+            description: 'Display this usage guide.',
+        },
+        {
+            name: 'out',
+            typeLabel: '{underline file}',
+            description: 'Output assembly name',
+        },
+    ];
 
-const options = commandLineArgs(optionDefinitions, { partial: true });
-const sourceFiles = options._unknown;
-if (!sourceFiles) {
-    console.error(commandLineUsage(sections));
-    process.exit(-1);
+    private sections = [
+        {
+            header: 'TSIL',
+            content: 'Compile typescript into .net',
+        },
+        {
+            header: 'Options',
+            optionList: this.optionDefinitions,
+        },
+    ];
+
+    public targetAssembly: string = '';
+    private targetDirectory: string = '';
+    private assemblyName: string = '';
+
+    private sourceFiles: string[] = [];
+
+    public ParseCLI(args: string[]) : Promise<Runner> {
+        const options = commandLineArgs(this.optionDefinitions, { argv: args, partial: true });
+        const sourceFiles = options._unknown;
+        console.log(sourceFiles)
+
+        if (sourceFiles === undefined || sourceFiles.length === 0) {
+            return Promise.reject(commandLineUsage(this.sections));
+        }
+        this.sourceFiles = sourceFiles;
+
+        if (!options.out) {
+            this.targetDirectory = path.parse(sourceFiles[0]).dir;
+            this.targetAssembly = path.join(this.targetDirectory, path.parse(sourceFiles[0]).name + ".exe");
+        }
+        else
+        {
+            this.targetAssembly = path.parse(options.out).base;
+            this.targetDirectory = path.parse(options.out).dir;
+        }
+        this.assemblyName = path.parse(this.targetAssembly).name;
+
+        return Promise.resolve(this);
+    }
+
+    private sources: ts.SourceFile[] = [];
+    private tsResult: ts.TransformationResult<ts.Node> | undefined;
+    public ParseSourceFiles() : Promise<Runner> {
+        const promises : Promise<ts.SourceFile>[] = [];
+        for (const file of this.sourceFiles) {
+            promises.push(readFile(file).then(
+                contents => ts.createSourceFile(path.parse(file).base, contents.toString(), ts.ScriptTarget.ES2018)));
+        }
+
+        return Promise
+            .all(promises)
+            .then(sources => {
+                this.sources = sources;
+                this.tsResult = ts.transform(sources, [Compiler.factory]);
+                return this;
+            });
+    }
+
+    public async Compile() : Promise<Runner> {
+        const promises : Promise<{file: string, il: string}>[] = [];
+        for (const node of this.tsResult!.transformed) {
+            promises.push(this.GenerateILFromNode(node));
+        }
+
+        let results = await Promise.all(promises);
+        await mkdir(this.targetDirectory).catch(r => null);
+
+        for (let output of results) {
+            await writeFile(path.join(this.targetDirectory, path.parse(output.file).name + ".il"), output.il);
+        }
+
+        const ilfiles = results.map(f => path.join(this.targetDirectory, path.parse(f.file).name + ".il"));
+
+        console.log(`Running ilasm ${ilfiles.join(' ')} /output:${this.targetAssembly}`);
+        exec(`ilasm ${ilfiles.join(' ')} /output:${this.targetAssembly}`);
+        console.log(`${this.targetAssembly} ready`);
+
+        return this;
+    }
+
+    private GenerateILFromNode(node: ts.Node) : Promise<{file: string, il: string}> {
+
+        let output: string = '';
+    
+        output += `
+    .assembly '${this.assemblyName}' {}
+    .module ${this.assemblyName}
+    `;
+        for (let m of Compiler.compiler.methods) {
+            console.log(m);
+    
+            output += `
+        .method ${m.isStatic ? 'static' : ''} hidebysig default ${m.returns} ${m.name}(${m.arguments.join(
+                ', '
+            )}) cil managed {
+    `;
+    
+            if (m.isEntry) {
+                output += `
+          .entrypoint`;
+            }
+            output += `
+        .maxstack 1`;
+    
+            for (let line of m.body) {
+                switch (line.type) {
+                    case ExpressionType.Call:
+                        {
+                            let arg: string = line.args.join(', ');
+                            output += `
+                ldstr "${arg}"`;
+                            let str: string = '';
+                            for (let i = 0; i < line.name.length - 1; i++) {
+                                str += line.name[i];
+                                if (i < line.name.length - 2) str += '.';
+                            }
+                            str += `::${line.name[line.name.length - 1]}`;
+                            if (line.name[0] === 'System') str = `[mscorlib]${str}`;
+                            output += `
+                call void class ${str}(string)`;
+                        }
+                        break;
+                    case ExpressionType.Ret:
+                        {
+                            output += `
+                ret`;
+                            output += `
+                }`;
+                        }
+                        break;
+                }
+            }
+        }
+    
+        output += `
+      `;
+
+        return Promise.resolve({ file: node.getSourceFile().fileName, il: output });
+    }
 }
 
-const targetAssembly: string = options.out || 'hello.exe';
-const assemblyName = path.parse(targetAssembly).name;
-const outputILFile = `${assemblyName}.il`;
-
 (async () => {
-    const printer: ts.Printer = ts.createPrinter();
-    let read = promisify(readFile);
+    await new Runner().ParseCLI(process.argv)
+        .then(r => r.ParseSourceFiles())
+        .then(r => r.Compile())
+        .catch(reason => console.error(reason));
+        ;
+
+    //const printer: ts.Printer = ts.createPrinter();
     //let txt = (await read('hello.tsi')).toString();
     //const source: ts.SourceFile = ts.createSourceFile('source.ts', txt, ts.ScriptTarget.ES2018);
     //console.log(printer.printFile(source));
 
-    const sources: ts.SourceFile[] = [];
-    for (const file of sourceFiles!) {
-        let txt = (await read(file)).toString();
-        sources.push(ts.createSourceFile(path.parse(file).base, txt, ts.ScriptTarget.ES2018));
-    }
+    
+    
 
-    const result = ts.transform(sources, [Compiler.factory]);
-
-    result.transformed[0];
-
-    let output: string = '';
-
-    output += `
-.assembly '${assemblyName}' {}
-.module ${assemblyName}
-`;
-    for (let m of Compiler.compiler.methods) {
-        console.log(m);
-
-        output += `
-    .method ${m.isStatic ? 'static' : ''} hidebysig default ${m.returns} ${m.name}(${m.arguments.join(
-            ', '
-        )}) cil managed {
-`;
-
-        if (m.isEntry) {
-            output += `
-      .entrypoint`;
-        }
-        output += `
-    .maxstack 1`;
-
-        for (let line of m.body) {
-            switch (line.type) {
-                case ExpressionType.Call:
-                    {
-                        let arg: string = line.args.join(', ');
-                        output += `
-            ldstr "${arg}"`;
-                        let str: string = '';
-                        for (let i = 0; i < line.name.length - 1; i++) {
-                            str += line.name[i];
-                            if (i < line.name.length - 2) str += '.';
-                        }
-                        str += `::${line.name[line.name.length - 1]}`;
-                        if (line.name[0] === 'System') str = `[mscorlib]${str}`;
-                        output += `
-            call void class ${str}(string)`;
-                    }
-                    break;
-                case ExpressionType.Ret:
-                    {
-                        output += `
-            ret`;
-                        output += `
-            }`;
-                    }
-                    break;
-            }
-        }
-    }
-
-    output += `
-  `;
-
-    let write = promisify(writeFile);
-    await write(outputILFile, output);
-    exec(`ilasm ${outputILFile} /output:${targetAssembly}`);
-    console.log(`${targetAssembly} ready`);
 })();

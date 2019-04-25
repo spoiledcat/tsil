@@ -1,5 +1,5 @@
 import { createStore, Action, combineReducers } from 'redux';
-import ts from 'typescript';
+import ts, { textSpanContainsTextSpan } from 'typescript';
 import { readFile, writeFile } from 'fs';
 import { promisify } from 'util';
 import path from 'path';
@@ -185,15 +185,24 @@ const handlers = {
     FunctionDeclaration: (state: Thing, action: Context): Thing => {
         const node = action.node as ts.FunctionDeclaration;
         const ret = updateObject(state, {});
-        console.log(checker.getSymbolAtLocation(node))
+        const symbol = checker.getSymbolAtLocation(node);
+        const type = checker.getReturnTypeOfSignature(checker.getSignatureFromDeclaration(node)!);
+        console.log(`${ts.TypeFlags[type.flags].toString()} ${checker.typeToString(type)}`);
+        //const type = checker.getDeclaredTypeOfSymbol(symbol!);
+        //console.log(ts.SyntaxKind[node.type!.kind])
+        //console.log(checker.typeToString(type));
 
-        ret.functions = state.functions.concat({ name: '', args: new Map<string, string>(), ret: '', statements: -2, lines: [] })
+        ret.functions = state.functions.concat({ name: '', args: new Map<string, string>(),
+            ret: ts.TypeFlags[type.flags].toString(),
+            statements: -2, lines: []
+        })
         ret.scope.push(TheScope.Function);
         return ret;
     }
     ,
     Identifier: (state: Thing, action: Context): Thing => {
         const node = action.node as ts.Identifier;
+        console.log(node.text)
         if (isInScope(state, TheScope.Function)) {
             return updateCurrentFunctionData(state, { name: node.text });
         }
@@ -202,9 +211,9 @@ const handlers = {
     ,
     StringKeyword: (state: Thing, action: Context): Thing => {
         const node = action.node as ts.KeywordTypeNode;
-        if (isInScope(state, TheScope.Function)) {
-            return updateCurrentFunctionData(state, { ret: 'string' });
-        }
+        // if (isInScope(state, TheScope.Function)) {
+        //     return updateCurrentFunctionData(state, { ret: 'string' });
+        // }
         return state;
     }
     ,
@@ -215,7 +224,19 @@ const handlers = {
     ,
     ExpressionStatement: (state: Thing, action: Context): Thing => {
         const node = action.node as ts.ExpressionStatement;
-        // console.log(node)
+        //console.log(node)
+        return state;
+    }
+    ,
+    PropertyAccessExpression: (state: Thing, action: Context): Thing => {
+        const node = action.node as ts.PropertyAccessExpression;
+        console.log(node. name.escapedText)
+        return state;
+    }
+    ,
+    FirstTemplateToken: (state: Thing, action: Context): Thing => {
+        const node = action.node as ts.LiteralExpression;
+        console.log(node.text)
         return state;
     }
     ,
@@ -228,6 +249,7 @@ const handlers = {
     ,
     StringLiteral: (state: Thing, action: Context): Thing => {
         const node = action.node as ts.StringLiteral;
+        console.log(node.text)
         const ret = state;
         const scope = getCurrentScope(ret);
         if (!scope.lines) scope.lines = [''];
@@ -239,13 +261,19 @@ const handlers = {
     ,
     CallExpression: (state: Thing, action: Context): Thing => {
         const node = action.node as ts.CallExpression;
-        // console.log(node)
+        console.log(`arguments: ${node.arguments.map(x => (<ts.Identifier>x).text)}`);
         return state;
     }
     ,
     IfStatement: (state: Thing, action: Context): Thing => {
         const node = action.node as ts.IfStatement;
         console.log(node)
+        return state;
+    }
+    ,
+    VariableDeclaration: (state: Thing, action: Context): Thing => {
+        const node = action.node as ts.VariableDeclaration;
+        console.log((<ts.Identifier>node.name).escapedText)
         return state;
     }
     ,
@@ -260,10 +288,10 @@ const currentMethod = () =>
         : undefined;
 
 function visitor<T extends ts.Node>(node: ts.Node): T {
-    console.log(`Visiting ${ts.SyntaxKind[node.kind]}`);
+    console.log(`Visiting ${node} ${ts.SyntaxKind[node.kind]}`);
     // let method = currentMethod()!;
     store.dispatch({ type: node.kind, node });
-    ts.visitEachChild(node, visitor, ctx);
+    ts.forEachChild(node, visitor);
     return <T>node;
 };
 
@@ -273,7 +301,7 @@ let store = createStore(reducers);
 store.subscribe(() => console.log(store.getState()));
 
 const sources: ts.SourceFile[] = [];
-const sourceFiles = ["hello.tsi"];
+const sourceFiles = ["tests/app/another.ts"];
 let checker: ts.TypeChecker;
 (async () => {
     let read = promisify(readFile);
@@ -283,12 +311,34 @@ let checker: ts.TypeChecker;
         sources.push(ts.createSourceFile(path.parse(file).base, txt, ts.ScriptTarget.ES2018));
     }
     const program = ts.createProgram(sourceFiles, {});
+    console.log(sourceFiles);
     checker = program.getTypeChecker();
     for (const sourceFile of program.getSourceFiles()) {
+        if (sourceFile.fileName.includes('node_modules'))
+            continue;
+        
+        store.dispatch({ type: ts.SyntaxKind.SourceFile, node: sourceFile });
         ts.forEachChild(sourceFile, visitor)
+
+        // console.log(`Visiting ${sourceFile.fileName}`);
+        // ts.forEachChild(sourceFile, node => {
+            
+        //     console.log(`Visiting ${ts.SyntaxKind[node.kind]} ${node.getSourceFile().fileName}`);
+        //     //store.dispatch({ type: node.kind, node });
+        //     if (ts.isTypeAliasDeclaration(node)) {
+        //         const symbol = checker.getSymbolAtLocation(node.name);
+        //         const type = checker.getDeclaredTypeOfSymbol(symbol!);
+        //         console.log(checker.typeToString(type));
+        //         //const properties = checker.getPropertiesOfType(type);
+        //         // properties.forEach(declaration => {
+        //         //   console.log(`\tReal Type ${declaration.name}`);
+        //         //   // prints username, info
+        //         // });
+        //     }
+        // });
     }
 
-    //const result = ts.transform(sources, [c => { ctx = c; return visitor as ts.Transformer<ts.Node> }]);
+    // const result = ts.transform(sources, [c => { ctx = c; return visitor as ts.Transformer<ts.Node> }]);
 
     //store.dispatch({ type: ts.SyntaxKind.SourceFile });
 
